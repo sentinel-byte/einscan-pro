@@ -23,9 +23,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el backend y otros archivos
+# Copiar el backend
 COPY backend/ ./backend/
-COPY data/ ./data/
+
+# CREAR CARPETAS DE DATOS (Solución al error de Render)
+RUN mkdir -p data/sheets data/scans data/exports
 
 # Copiar el frontend compilado desde la ETAPA 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
