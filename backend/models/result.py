@@ -13,6 +13,8 @@ class Scan(Base):
     raw_result_json = Column(JSON)
     processed_at = Column(DateTime, default=datetime.utcnow)
 
+    # Relaciones faltantes corregidas
+    exam = relationship("Exam", back_populates="scans")
     result = relationship("Result", back_populates="scan", uselist=False)
 
 class Result(Base):
@@ -28,11 +30,12 @@ class Result(Base):
     wrong = Column(Integer)
     blank = Column(Integer)
     
-    answers_json = Column(JSON) # El detalle de cada respuesta
-    flags_json = Column(JSON)   # Marcas de advertencia (doble marca, etc)
+    answers_json = Column(JSON)
+    flags_json = Column(JSON)
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
     scan = relationship("Scan", back_populates="result")
     student = relationship("Student", back_populates="results")
     exam = relationship("Exam", back_populates="results")
+
