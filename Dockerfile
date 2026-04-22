@@ -14,10 +14,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-spa \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Copiar requerimientos e instalar
 COPY requirements.txt .
