@@ -24,50 +24,35 @@ async def export_excel(exam_id: int, db: Session = Depends(get_db)):
         
     results = db.query(Result).filter(Result.exam_id == exam_id).all()
     
+    if not results:
+        raise HTTPException(status_code=400, detail="No hay resultados confirmados para exportar.")
+    
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Resultados"
     
-    # Estilos
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid")
-    center_align = Alignment(horizontal="center")
-    
     # Encabezados
-    headers = ["Puesto", "Nombre del Estudiante", "DNI", "Correctas", "Incorrectas", "Blancas", "Nota Final"]
+    headers = ["Puesto", "Estudiante", "DNI", "Correctas", "Incorrectas", "Blancas", "Nota Final"]
     for col, text in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=text)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = center_align
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid")
     
-    # Datos
+    # Ranking
     sorted_results = sorted(results, key=lambda x: x.score, reverse=True)
     for i, r in enumerate(sorted_results, 1):
         student = db.query(Student).filter(Student.id == r.student_id).first()
         ws.cell(row=i+1, column=1, value=i)
-        ws.cell(row=i+1, column=2, value=student.name if student else "Desconocido")
+        ws.cell(row=i+1, column=2, value=student.name if student else "Anonimo")
         ws.cell(row=i+1, column=3, value=student.dni if student else "-")
         ws.cell(row=i+1, column=4, value=r.correct)
         ws.cell(row=i+1, column=5, value=r.wrong)
         ws.cell(row=i+1, column=6, value=r.blank)
         ws.cell(row=i+1, column=7, value=r.score)
-    
-    # Ajustar ancho de columnas
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except: pass
-        ws.column_dimensions[column].width = max_length + 2
 
-    file_path = f"data/exports/resultados_{exam_id}.xlsx"
-    wb.save(file_path)
-    
-    return FileResponse(file_path, filename=f"resultados_{exam.name}.xlsx")
+    path = f"data/exports/res_{exam_id}.xlsx"
+    wb.save(path)
+    return FileResponse(path, filename=f"Ranking_{exam.name}.xlsx")
 
 @router.get("/pdf-boletas/{exam_id}")
 async def export_pdf_boletas(exam_id: int, db: Session = Depends(get_db)):
@@ -76,48 +61,45 @@ async def export_pdf_boletas(exam_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Examen no encontrado")
         
     results = db.query(Result).filter(Result.exam_id == exam_id).all()
+    if not results:
+        raise HTTPException(status_code=400, detail="No hay resultados para generar boletas.")
+
     file_path = f"data/exports/boletas_{exam_id}.pdf"
-    
     c = canvas.Canvas(file_path, pagesize=A4)
-    width, height = A4
+    w, h = A4
     
     for r in results:
         student = db.query(Student).filter(Student.id == r.student_id).first()
         
-        # Dibujar Boleta
-        c.setFont("Helvetica-Bold", 16)
+        # Diseño de la Boleta
+        c.setFont("Helvetica-Bold", 18)
         c.setFillColorRGB(0.8, 0, 0)
-        c.drawCentredString(width/2, height - 20*mm, "COLEGIO ALBERT EINSTEIN")
+        c.drawCentredString(w/2, h - 25*mm, "COLEGIO ALBERT EINSTEIN")
         
-        c.setFont("Helvetica-Bold", 12)
+        c.setStrokeColorRGB(0.8, 0, 0)
+        c.line(20*mm, h - 28*mm, w - 20*mm, h - 28*mm)
+        
         c.setFillColorRGB(0, 0, 0)
-        c.drawCentredString(width/2, height - 30*mm, "BOLETA DE RESULTADOS OMR")
+        c.setFont("Helvetica-Bold", 12)
+        c.drawCentredString(w/2, h - 35*mm, "REPORTE INDIVIDUAL DE EVALUACIÓN")
         
-        c.setLineWidth(0.5)
-        c.line(20*mm, height - 35*mm, width - 20*mm, height - 35*mm)
-        
-        # Información
         c.setFont("Helvetica", 10)
-        c.drawString(25*mm, height - 45*mm, f"EXAMEN: {exam.name}")
-        c.drawString(25*mm, height - 50*mm, f"MATERIA: {exam.subject}")
-        c.drawString(25*mm, height - 55*mm, f"FECHA: {datetime.now().strftime('%d/%m/%Y')}")
+        c.drawString(25*mm, h - 50*mm, f"EXAMEN: {exam.name}")
+        c.drawString(25*mm, h - 55*mm, f"MATERIA: {exam.subject}")
+        c.drawString(25*mm, h - 60*mm, f"ESTUDIANTE: {student.name if student else 'S/N'}")
+        c.drawString(25*mm, h - 65*mm, f"DNI: {student.dni if student else '-'}")
         
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(25*mm, height - 65*mm, f"ESTUDIANTE: {student.name if student else 'Desconocido'}")
-        c.drawString(25*mm, height - 70*mm, f"DNI: {student.dni if student else '-'}")
-        
-        # Cuadro de puntaje
-        c.rect(25*mm, height - 100*mm, 160*mm, 20*mm)
+        # Resultados
+        c.roundRect(25*mm, h - 95*mm, 160*mm, 25*mm, 3)
         c.setFont("Helvetica-Bold", 14)
-        c.drawString(30*mm, height - 92*mm, "PUNTAJE TOTAL:")
-        c.drawRightString(180*mm, height - 92*mm, f"{r.score:.2f}")
+        c.drawString(35*mm, h - 85*mm, "PUNTAJE OBTENIDO:")
+        c.drawRightString(175*mm, h - 85*mm, f"{r.score:.2f}")
         
         c.setFont("Helvetica", 10)
-        c.drawString(30*mm, height - 110*mm, f"Respuestas Correctas: {r.correct}")
-        c.drawString(30*mm, height - 115*mm, f"Respuestas Incorrectas: {r.wrong}")
-        c.drawString(30*mm, height - 120*mm, f"Respuestas en Blanco: {r.blank}")
+        c.drawString(35*mm, h - 110*mm, f"Correctas: {r.correct}  |  Incorrectas: {r.wrong}  |  Blancas: {r.blank}")
         
-        c.showPage() # Nueva página por estudiante
+        c.showPage()
         
     c.save()
-    return FileResponse(file_path, filename=f"boletas_{exam.name}.pdf")
+    return FileResponse(file_path, filename=f"Boletas_{exam.name}.pdf")
+
