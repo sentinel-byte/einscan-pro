@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 import uuid
 from pydantic import BaseModel
 
+# Forzar carga de variables de entorno
+load_dotenv()
+
 from backend.database import engine, Base, get_db
 from backend.models.config import AppConfig, License
 
@@ -17,7 +20,6 @@ from backend.models.exam import Exam, AnswerKey
 from backend.models.student import Student
 from backend.models.result import Scan, Result
 
-load_dotenv()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="EinScan Pro API")
@@ -34,19 +36,14 @@ app.add_middleware(
 @app.middleware("http")
 async def license_check_middleware(request: Request, call_next):
     path = request.url.path
-    
-    # Rutas públicas (estáticos, assets, login de licencia, y vista de imágenes para miniaturas)
     if (not path.startswith("/api") or 
         path.startswith("/api/license/validate") or 
         path.startswith("/api/license/generate") or
         path.startswith("/api/license/list") or
         path.startswith("/api/scanner/view")):
         return await call_next(request)
-
     
-    # Obtener Key del Header
     license_key = request.headers.get("X-License-Key")
-    
     if not license_key:
         return JSONResponse(status_code=403, content={"detail": "MISSING_KEY"})
     
@@ -72,8 +69,10 @@ class LicenseValidate(BaseModel):
 
 @app.post("/api/license/validate")
 def validate_key(data: LicenseValidate, db: Session = Depends(get_db)):
+    # Limpiar clave de espacios
+    clean_key = data.key.strip()
     lic = db.query(License).filter(
-        License.key == data.key,
+        License.key == clean_key,
         License.is_active == True,
         License.expires_at > datetime.utcnow()
     ).first()
@@ -83,8 +82,11 @@ def validate_key(data: LicenseValidate, db: Session = Depends(get_db)):
 
 @app.post("/api/license/generate")
 def generate_license(data: LicenseCreate, db: Session = Depends(get_db)):
-    master_pass = os.getenv("ADMIN_PASSWORD", "admin123")
-    if data.admin_pass != master_pass:
+    # Obtener password y limpiar espacios
+    master_pass = os.getenv("ADMIN_PASSWORD", "admin123").strip()
+    input_pass = data.admin_pass.strip()
+    
+    if input_pass != master_pass:
         raise HTTPException(status_code=401, detail="Contraseña maestra incorrecta")
     
     new_key = "EINSTEIN-" + str(uuid.uuid4()).upper()[:8]
@@ -97,9 +99,11 @@ def generate_license(data: LicenseCreate, db: Session = Depends(get_db)):
 
 @app.get("/api/license/list")
 def list_licenses(admin_pass: str, db: Session = Depends(get_db)):
-    master_pass = os.getenv("ADMIN_PASSWORD", "admin123")
-    if admin_pass != master_pass:
-        raise HTTPException(status_code=401)
+    master_pass = os.getenv("ADMIN_PASSWORD", "admin123").strip()
+    input_pass = admin_pass.strip()
+    
+    if input_pass != master_pass:
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
     return db.query(License).all()
 
 # --- INCLUSIÓN DE ROUTERS ---
@@ -110,12 +114,10 @@ app.include_router(scanner.router, prefix="/api/scanner", tags=["Scanner"])
 app.include_router(results.router, prefix="/api/results", tags=["Results"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 
-# --- SERVIR FRONTEND (CATCH-ALL) ---
+# --- SERVIR FRONTEND ---
 frontend_dist = os.path.join(os.getcwd(), "frontend", "dist")
-
 if os.path.exists(frontend_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
-    
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         if full_path.startswith("api"):
