@@ -16,48 +16,44 @@ async def generate_pdf(exam_id: int, db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="Examen no encontrado")
     
-    # Rutas absolutas para Render
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # Ruta base del proyecto
+    base_dir = os.getcwd()
     filename = f"ficha_examen_{exam_id}.pdf"
     layout_filename = f"{exam_id}_layout.json"
     
+    # Asegurar que la carpeta data/sheets existe
     sheets_dir = os.path.join(base_dir, "data", "sheets")
-    os.makedirs(sheets_dir, exist_ok=True)
+    if not os.path.exists(sheets_dir):
+        os.makedirs(sheets_dir, exist_ok=True)
     
     output_path = os.path.join(sheets_dir, filename)
     layout_path = os.path.join(sheets_dir, layout_filename)
     
-    print(f"DEBUG: Generando PDF en {output_path}...")
-    
     try:
+        # Usamos el generador excelente (SIN TOCAR SU CÓDIGO)
         generator = AnswerSheetGenerator(output_path, layout_path, exam_id)
         generator.generate(num_questions=60, options=5)
         
-        # Validación de supervivencia del archivo
-        time.sleep(0.5) # Pequeña espera para asegurar escritura en disco
-        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-            print(f"ERROR: El archivo PDF no se creó correctamente en {output_path}")
-            raise Exception("El archivo generado está vacío o no existe.")
+        # Pequeña verificación de que el archivo existe
+        if not os.path.exists(output_path):
+            raise Exception("Error físico al escribir el PDF")
             
-        print(f"DEBUG: PDF generado con éxito. Tamaño: {os.path.getsize(output_path)} bytes")
-        
         return {
             "message": "PDF generado con éxito",
-            "pdf_url": f"/api/generator/download/{exam_id}?t={int(time.time())}" # Cache busting
+            "pdf_url": f"/api/generator/download/{exam_id}?v={int(time.time())}"
         }
     except Exception as e:
-        print(f"CRITICAL ERROR generando PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error interno al crear el PDF: {str(e)}")
+        print(f"Error en generación: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del motor de PDF")
 
 @router.get("/download/{exam_id}")
 async def download_pdf(exam_id: int):
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_dir = os.getcwd()
     filename = f"ficha_examen_{exam_id}.pdf"
     output_path = os.path.join(base_dir, "data", "sheets", filename)
     
     if not os.path.exists(output_path):
-        print(f"ERROR: Intento de descarga de PDF inexistente: {output_path}")
-        raise HTTPException(status_code=404, detail="El archivo PDF no se encuentra en el servidor.")
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
         
     return FileResponse(
         output_path, 
@@ -65,4 +61,3 @@ async def download_pdf(exam_id: int):
         filename=filename,
         content_disposition_type='inline'
     )
-
