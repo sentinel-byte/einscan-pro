@@ -16,7 +16,8 @@ class Exam(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     questions = relationship("AnswerKey", back_populates="exam", cascade="all, delete-orphan")
-    results = relationship("Result", back_populates="exam")
+    results = relationship("Result", back_populates="exam", cascade="all, delete-orphan")
+    scans = relationship("Scan", back_populates="exam", cascade="all, delete-orphan")
 
 class AnswerKey(Base):
     __tablename__ = "answer_keys"

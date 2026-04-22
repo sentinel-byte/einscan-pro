@@ -58,3 +58,12 @@ def set_answers(exam_id: int, answers: List[AnswerKeySchema], db: Session = Depe
 @router.get("/{exam_id}/answers", response_model=List[AnswerKeySchema])
 def get_answers(exam_id: int, db: Session = Depends(get_db)):
     return db.query(AnswerKey).filter(AnswerKey.exam_id == exam_id).all()
+
+@router.delete("/{exam_id}")
+def delete_exam(exam_id: int, db: Session = Depends(get_db)):
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Examen no encontrado")
+    db.delete(exam)
+    db.commit()
+    return {"message": "Examen eliminado correctamente"}

@@ -47,11 +47,12 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     return {"access_token": access_token, "token_type": "bearer"}
 
 # Inclusión de routers
-from backend.routers import exams, generator, scanner, results
+from backend.routers import exams, generator, scanner, results, export
 app.include_router(exams.router, prefix="/api/exams", tags=["Exams"])
 app.include_router(generator.router, prefix="/api/generator", tags=["Generator"])
 app.include_router(scanner.router, prefix="/api/scanner", tags=["Scanner"])
 app.include_router(results.router, prefix="/api/results", tags=["Results"])
+app.include_router(export.router, prefix="/api/export", tags=["Export"])
 
 # Servir Frontend
 frontend_dist = os.path.join(os.getcwd(), "frontend", "dist")
