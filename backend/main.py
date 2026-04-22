@@ -59,8 +59,10 @@ async def license_check_middleware(request: Request, call_next):
         "/api/license/list",
         "/api/scanner/view",
         "/api/export/pdf-boletas",
-        "/api/export/excel"
+        "/api/export/excel",
+        "/api/generator/download"
     ]
+
 
     if any(path.startswith(p) for p in public_api_paths):
         return await call_next(request)
