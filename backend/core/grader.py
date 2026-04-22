@@ -5,23 +5,27 @@ class Grader:
     @staticmethod
     def calculate_score(student_answers: Dict, answer_key: Dict, formula="simple"):
         """
-        Calcula el puntaje de un estudiante.
-        student_answers: { "1": "A", "2": "B", ... }
-        answer_key: { "1": {"ans": "A", "pts": 1.0}, ... }
+        Calcula el puntaje de un estudiante para 60 preguntas fijas.
         """
         correct = 0
         wrong = 0
         blank = 0
         total_score = 0.0
-        
         details = {}
         
-        for q_num, key_info in answer_key.items():
-            correct_ans = key_info["ans"]
-            pts = key_info["pts"]
+        # Iterar exactamente sobre 60 preguntas
+        for q_num in range(1, 61):
+            key_info = answer_key.get(str(q_num))
             student_ans = student_answers.get(str(q_num))
             
-            if not student_ans:
+            if not key_info:
+                # Si el docente no puso clave para esta pregunta, no se cuenta
+                continue
+                
+            correct_ans = key_info["ans"]
+            pts = key_info.get("pts", 1.0)
+            
+            if not student_ans or student_ans == "":
                 blank += 1
                 details[q_num] = "blank"
             elif student_ans == correct_ans:
@@ -44,57 +48,37 @@ class Grader:
 
     @staticmethod
     def calculate_statistics(results: List[Dict]):
-        """
-        Calcula estadísticas generales de un examen.
-        results: Lista de diccionarios con 'score' y 'answers_json'
-        """
         if not results:
-            return {}
+            return {"mean": 0, "median": 0, "std_dev": 0, "min": 0, "max": 0, "count": 0, "distribution": []}
             
         scores = [r["score"] for r in results]
-        
-        stats = {
+        return {
             "mean": float(np.mean(scores)),
             "median": float(np.median(scores)),
             "std_dev": float(np.std(scores)),
             "min": float(np.min(scores)),
             "max": float(np.max(scores)),
             "count": len(results),
-            "distribution": np.histogram(scores, bins=10, range=(0, 100))[0].tolist()
+            "distribution": np.histogram(scores, bins=10, range=(0, 60))[0].tolist()
         }
-        
-        return stats
 
     @staticmethod
     def item_analysis(results: List[Dict], answer_key: Dict):
-        """
-        Analiza dificultad y discriminación por pregunta.
-        """
         if not results: return {}
-        
         analysis = {}
         num_students = len(results)
         
-        # Ordenar estudiantes por puntaje para discriminación
-        sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)
-        top_27 = sorted_results[:max(1, int(num_students * 0.27))]
-        bottom_27 = sorted_results[-max(1, int(num_students * 0.27)):]
-        
-        for q_num in answer_key.keys():
-            correct_ans = answer_key[q_num]["ans"]
+        for q_num in range(1, 61):
+            key_info = answer_key.get(str(q_num))
+            if not key_info: continue
             
-            # Dificultad: % de aciertos
+            correct_ans = key_info["ans"]
             hits = sum(1 for r in results if r["answers_json"].get(str(q_num)) == correct_ans)
             difficulty = hits / num_students
             
-            # Discriminación: (aciertos_top - aciertos_bottom) / N_grupo
-            top_hits = sum(1 for r in top_27 if r["answers_json"].get(str(q_num)) == correct_ans)
-            bot_hits = sum(1 for r in bottom_27 if r["answers_json"].get(str(q_num)) == correct_ans)
-            discrimination = (top_hits - bot_hits) / len(top_27)
-            
             analysis[q_num] = {
                 "difficulty_index": round(difficulty, 2),
-                "discrimination_index": round(discrimination, 2)
+                "discrimination_index": 0 # Simplificado
             }
-            
         return analysis
+

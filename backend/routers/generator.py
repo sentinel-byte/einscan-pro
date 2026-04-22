@@ -6,7 +6,6 @@ import os
 from backend.database import get_db
 from backend.models.exam import Exam
 from backend.core.pdf_generator import AnswerSheetGenerator
-from backend.auth import get_current_user
 
 router = APIRouter()
 
@@ -16,33 +15,38 @@ async def generate_pdf(exam_id: int, db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="Examen no encontrado")
     
+    # Rutas absolutas para Render
+    base_dir = os.getcwd()
     filename = f"ficha_examen_{exam_id}.pdf"
     layout_filename = f"{exam_id}_layout.json"
     
-    output_path = os.path.join("data", "sheets", filename)
-    layout_path = os.path.join("data", "sheets", layout_filename)
+    output_path = os.path.join(base_dir, "data", "sheets", filename)
+    layout_path = os.path.join(base_dir, "data", "sheets", layout_filename)
+    
+    # Asegurar que el directorio existe
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     generator = AnswerSheetGenerator(output_path, layout_path, exam_id)
-    generator.generate(num_questions=exam.num_questions, options=exam.options_per_question)
+    # Siempre generamos con 60 preguntas y 5 opciones
+    generator.generate(num_questions=60, options=5)
     
     return {
         "message": "PDF generado con éxito",
-        "pdf_url": f"/api/generator/download/{exam_id}",
-        "layout_path": layout_path
+        "pdf_url": f"/api/generator/download/{exam_id}"
     }
 
 @router.get("/download/{exam_id}")
 async def download_pdf(exam_id: int):
+    base_dir = os.getcwd()
     filename = f"ficha_examen_{exam_id}.pdf"
-    output_path = os.path.join("data", "sheets", filename)
+    output_path = os.path.join(base_dir, "data", "sheets", filename)
     
     if not os.path.exists(output_path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        raise HTTPException(status_code=404, detail="El PDF no ha sido generado todavía.")
         
-    # Usamos Content-Disposition: inline para que se abra en el navegador
     return FileResponse(
         output_path, 
-        filename=filename, 
         media_type='application/pdf',
+        filename=filename,
         content_disposition_type='inline'
     )

@@ -17,19 +17,27 @@ class AnswerKeySchema(BaseModel):
 class ExamCreate(BaseModel):
     name: str
     subject: str
-    num_questions: int
-    options_per_question: int = 5
-    scoring_formula: str = "simple"
 
-class ExamResponse(ExamCreate):
+class ExamResponse(BaseModel):
     id: int
+    name: str
+    subject: str
+    num_questions: int
+    options_per_question: int
     date: datetime
     class Config:
         from_attributes = True
 
 @router.post("/", response_model=ExamResponse)
 def create_exam(exam: ExamCreate, db: Session = Depends(get_db)):
-    db_exam = Exam(**exam.model_dump())
+    # FORZAMOS 60 preguntas y 5 opciones (A-E)
+    db_exam = Exam(
+        name=exam.name,
+        subject=exam.subject,
+        num_questions=60,
+        options_per_question=5,
+        scoring_formula="simple"
+    )
     db.add(db_exam)
     db.commit()
     db.refresh(db_exam)
@@ -46,6 +54,15 @@ def get_exam(exam_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Examen no encontrado")
     return exam
 
+@router.delete("/{exam_id}")
+def delete_exam(exam_id: int, db: Session = Depends(get_db)):
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Examen no encontrado")
+    db.delete(exam)
+    db.commit()
+    return {"message": "Examen eliminado correctamente"}
+
 @router.post("/{exam_id}/answers")
 def set_answers(exam_id: int, answers: List[AnswerKeySchema], db: Session = Depends(get_db)):
     db.query(AnswerKey).filter(AnswerKey.exam_id == exam_id).delete()
@@ -58,12 +75,3 @@ def set_answers(exam_id: int, answers: List[AnswerKeySchema], db: Session = Depe
 @router.get("/{exam_id}/answers", response_model=List[AnswerKeySchema])
 def get_answers(exam_id: int, db: Session = Depends(get_db)):
     return db.query(AnswerKey).filter(AnswerKey.exam_id == exam_id).all()
-
-@router.delete("/{exam_id}")
-def delete_exam(exam_id: int, db: Session = Depends(get_db)):
-    exam = db.query(Exam).filter(Exam.id == exam_id).first()
-    if not exam:
-        raise HTTPException(status_code=404, detail="Examen no encontrado")
-    db.delete(exam)
-    db.commit()
-    return {"message": "Examen eliminado correctamente"}
