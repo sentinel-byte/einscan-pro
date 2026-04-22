@@ -39,8 +39,10 @@ async def license_check_middleware(request: Request, call_next):
     if (not path.startswith("/api") or 
         path.startswith("/api/license/validate") or 
         path.startswith("/api/license/generate") or
+        path.startswith("/api/license/list") or
         path.startswith("/api/scanner/view")):
         return await call_next(request)
+
     
     # Obtener Key del Header
     license_key = request.headers.get("X-License-Key")
