@@ -1,7 +1,7 @@
 import os
 import uuid
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
@@ -29,7 +29,7 @@ async def upload_scans(
         
     layout_path = os.path.join("data", "sheets", f"{exam_id}_layout.json")
     if not os.path.exists(layout_path):
-        raise HTTPException(status_code=400, detail="Primero genera la ficha PDF")
+        raise HTTPException(status_code=400, detail="Falta el archivo de diseño")
 
     pipeline = OMRPipeline(layout_path)
     ocr = OCRReader()
@@ -37,31 +37,34 @@ async def upload_scans(
     
     for file in files:
         file_id = str(uuid.uuid4())
-        file_ext = file.filename.split(".")[-1]
-        file_path = os.path.join("data", "scans", f"{file_id}.{file_ext}")
+        file_path = os.path.join("data", "scans", f"{file_id}.jpg")
         
+        # Guardar archivo temporal
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
         try:
-            # 1. Procesar OMR
+            # Procesamiento OMR
             omr_res = pipeline.process_image(file_path)
             
             if "error" in omr_res:
                 processed_results.append({"filename": file.filename, "status": "error", "message": omr_res["error"]})
                 continue
 
-            # 2. Procesar OCR de Nombres si están disponibles
+            # OCR de Nombres (Opcional, no debe fallar el proceso completo)
             full_name = ""
-            if "name_rois" in omr_res:
-                ap_p = ocr.read_name(omr_res["name_rois"].get("APELLIDO PATERNO"))
-                ap_m = ocr.read_name(omr_res["name_rois"].get("APELLIDO MATERNO"))
-                noms = ocr.read_name(omr_res["name_rois"].get("NOMBRES"))
-                full_name = f"{ap_p} {ap_m} {noms}".strip()
-                # Eliminar ROIs del diccionario (no son serializables a JSON)
-                del omr_res["name_rois"]
+            try:
+                if "name_rois" in omr_res:
+                    ap_p = ocr.read_name(omr_res["name_rois"].get("APELLIDO PATERNO"))
+                    ap_m = ocr.read_name(omr_res["name_rois"].get("APELLIDO MATERNO"))
+                    noms = ocr.read_name(omr_res["name_rois"].get("NOMBRES"))
+                    full_name = f"{ap_p} {ap_m} {noms}".strip()
+            except: pass
 
-            # Guardar en base de datos
+            # Eliminar ROIs para poder guardar en DB (JSON)
+            if "name_rois" in omr_res: del omr_res["name_rois"]
+
+            # Guardar Registro
             new_scan = Scan(
                 exam_id=exam_id,
                 image_path=file_path,
@@ -79,8 +82,7 @@ async def upload_scans(
                 "status": "success"
             })
         except Exception as e:
-            print(f"Error procesando {file.filename}: {str(e)}")
-            processed_results.append({"filename": file.filename, "status": "error", "message": "Fallo crítico en el motor"})
+            processed_results.append({"filename": file.filename, "status": "error", "message": "Fallo en motor"})
         
     return {"processed": processed_results}
 
@@ -97,7 +99,6 @@ async def confirm_scan(scan_id: int, data: dict, db: Session = Depends(get_db)):
     if not scan: raise HTTPException(status_code=404)
     
     dni, student_name = data.get("dni"), data.get("student_name")
-    
     student = db.query(Student).filter(Student.dni == dni).first()
     if not student:
         student = Student(dni=dni, name=student_name)
@@ -116,7 +117,6 @@ async def confirm_scan(scan_id: int, data: dict, db: Session = Depends(get_db)):
         score=grade["score"], correct=grade["correct"], wrong=grade["wrong"], blank=grade["blank"],
         answers_json=scan.raw_result_json["answers"], flags_json={}
     )
-    
     db.add(new_result)
     scan.student_id = student.id
     db.commit()
