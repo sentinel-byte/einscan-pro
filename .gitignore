@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+env/
+venv/
+
+# Base de datos y archivos locales
+data/db.sqlite
+data/sheets/*.pdf
+data/sheets/*.json
+data/scans/*
+data/exports/*
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
