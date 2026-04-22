@@ -73,7 +73,7 @@ export default function Generator() {
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 text-center">Generador de Fichas Ópticas Galeno</h1>
+        <h1 className="text-2xl font-bold text-gray-900 text-center">Generador de Fichas Ópticas</h1>
         <p className="text-gray-500 text-center mt-1">Configura los parámetros para crear tu ficha OMR profesional.</p>
       </div>
 
@@ -111,7 +111,7 @@ export default function Generator() {
                   value={formData.num_questions}
                   onChange={e => setFormData({...formData, num_questions: parseInt(e.target.value)})}
                 >
-                  <option value={60}>60 preguntas (Galeno)</option>
+                  <option value={60}>60 preguntas (Estándar)</option>
                   <option value={30}>30 preguntas</option>
                   <option value={100}>100 preguntas</option>
                 </select>
@@ -148,7 +148,7 @@ export default function Generator() {
              </div>
              <h4 className="font-bold text-gray-800 text-lg">Formato Horizontal Profesional</h4>
              <p className="text-sm text-gray-500 mt-2">
-               El sistema generará una ficha tipo Galeno dividida en Identificación (izquierda) y Respuestas (derecha) con marcas de sincronización OMR automáticas.
+               El sistema generará una ficha profesional dividida en Identificación (izquierda) y Respuestas (derecha) con marcas de sincronización OMR automáticas.
              </p>
           </div>
           

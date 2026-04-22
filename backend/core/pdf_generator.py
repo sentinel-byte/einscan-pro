@@ -56,7 +56,7 @@ class AnswerSheetGenerator:
         # --- CABECERA IZQUIERDA ---
         c.setFont("Helvetica-Bold", 16)
         c.setFillColor(black)
-        # Movido 2cm (20mm) a la derecha desde start_x
+        # Alineado verticalmente con Colegio Albert Einstein (35 + 5*mm)
         tx, ty = self.pos(start_x + 20*mm, 35 + 5*mm)
         c.drawString(tx, ty, "HOJA DE IDENTIFICACIÓN")
 
@@ -151,6 +151,7 @@ class AnswerSheetGenerator:
         start_x = self.width / 2 + 35
         
         # --- CABECERA DERECHA ---
+        # Colegio Albert Einstein (Ajustado: +1.5cm a la derecha)
         c.setFont("Helvetica-Bold", 20)
         c.setFillColor(self.galeno_red)
         tx_ae, ty_ae = self.pos(start_x + 15*mm, 35 + 5*mm)

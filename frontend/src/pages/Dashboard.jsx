@@ -48,7 +48,7 @@ export default function Dashboard() {
           number="01" 
           icon={FilePlus} 
           title="Crear Examen" 
-          desc="Define el nombre, materia y descarga el PDF de la ficha Galeno."
+          desc="Define el nombre, materia y descarga el PDF de la ficha oficial."
           to="/generator"
           completed={examCount > 0}
         />
