@@ -15,134 +15,115 @@ class OMRPipeline:
         self.bubble_radius = int(self.layout["bubble_radius_pt"] * self.pt_to_px)
 
     def preprocess(self, image):
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        # CLAHE para mejorar contraste local (útil para fotos con sombras)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        """Preprocesamiento robusto para fotos."""
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(12,12))
         contrast = clahe.apply(gray)
-        blurred = cv2.GaussianBlur(contrast, (3, 3), 0)
-        return blurred
+        denoised = cv2.fastNlMeansDenoising(contrast, None, 10, 7, 21)
+        return denoised
 
-    def get_perspective_transform(self, image):
-        """Detecta marcas de tiempo y calcula la transformación."""
-        # Umbralización adaptativa para detectar las marcas negras
+    def detect_timing_marks(self, image):
         thresh = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                      cv2.THRESH_BINARY_INV, 11, 2)
-        
+                                      cv2.THRESH_BINARY_INV, 21, 10)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Filtrar rectángulos que parezcan marcas de tiempo (4x3 mm aprox)
         marks = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
             aspect_ratio = w / float(h)
             area = cv2.contourArea(cnt)
-            
-            # Ajustar estos valores según la escala de la imagen
-            if 0.8 < aspect_ratio < 2.0 and area > 50:
+            if 1.0 < aspect_ratio < 2.5 and 500 < area < 5000:
                 marks.append([x + w//2, y + h//2])
-        
-        if len(marks) < 4:
-            return None, 0
+        return np.array(marks)
 
-        # Encontrar las 4 esquinas más extremas entre las marcas detectadas
-        marks = np.array(marks)
+    def get_perspective_transform(self, image):
+        marks = self.detect_timing_marks(image)
+        if len(marks) < 4: return None, 0
         top_left = marks[np.argmin(marks[:,0] + marks[:,1])]
         top_right = marks[np.argmax(marks[:,0] - marks[:,1])]
         bot_left = marks[np.argmin(marks[:,0] - marks[:,1])]
         bot_right = marks[np.argmax(marks[:,0] + marks[:,1])]
-        
         src_pts = np.float32([top_left, top_right, bot_left, bot_right])
-        
-        # Puntos de destino basados en el layout (en píxeles)
-        # Usamos la primera y última marca de tiempo definida en el layout para mayor precisión
-        tl_layout = np.array(self.layout["timing_marks"]["top"][0]) * self.pt_to_px
-        tr_layout = np.array(self.layout["timing_marks"]["top"][-1]) * self.pt_to_px
-        bl_layout = np.array(self.layout["timing_marks"]["bottom"][0]) * self.pt_to_px
-        br_layout = np.array(self.layout["timing_marks"]["bottom"][-1]) * self.pt_to_px
-        
-        dst_pts = np.float32([tl_layout, tr_layout, bl_layout, br_layout])
-        
+        margin_px = 10 * self.pt_to_px
+        dst_pts = np.float32([
+            [margin_px, margin_px],
+            [self.target_w - margin_px, margin_px],
+            [margin_px, self.target_h - margin_px],
+            [self.target_w - margin_px, self.target_h - margin_px]
+        ])
         M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-        return M, 1.0
+        quality = min(len(marks) / 60.0, 1.0)
+        return M, quality
 
     def process_bubble(self, image, center_pt):
         cx, cy = int(center_pt[0] * self.pt_to_px), int(center_pt[1] * self.pt_to_px)
-        r = self.bubble_radius
-        
-        # Extraer ROI
+        r = int(self.bubble_radius * 0.9)
         roi = image[cy-r:cy+r, cx-r:cx+r]
         if roi.size == 0: return 0, "error"
-        
-        # Umbral de Otsu para separar papel de marca
-        _, thresh = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        
-        # Calcular ratio de llenado (píxeles negros / total área de la burbuja)
-        # Creamos una máscara circular para solo contar lo de adentro
-        mask = np.zeros_like(thresh)
+        mask = np.zeros((2*r, 2*r), dtype=np.uint8)
         cv2.circle(mask, (r, r), r-1, 255, -1)
-        filled_pixels = cv2.countNonZero(cv2.bitwise_and(thresh, mask))
-        total_pixels = cv2.countNonZero(mask)
-        
-        fill_ratio = filled_pixels / float(total_pixels)
-        
+        mean_val = cv2.mean(roi, mask=mask)[0]
+        darkness = 1.0 - (mean_val / 255.0)
         status = "empty"
-        if fill_ratio > 0.55: status = "filled"
-        elif fill_ratio > 0.25: status = "ambiguous"
-        
-        return fill_ratio, status
+        if darkness > 0.45: status = "filled"
+        elif darkness > 0.20: status = "ambiguous"
+        return darkness, status
+
+    def extract_field_roi(self, warped_image, field_name):
+        """Extrae el recorte de un campo de escritura (como Nombres)."""
+        bbox = self.layout["name_field_bbox"].get(field_name)
+        if not bbox: return None
+        x, y, w, h = [int(v * self.pt_to_px) for v in bbox]
+        # Añadir un pequeño margen interno para no tomar los bordes del recuadro
+        roi = warped_image[y+2:y+h-2, x+2:x+w-2]
+        return roi
 
     def process_image(self, image_path):
         img = cv2.imread(image_path)
-        if img is None: return None
+        if img is None: return {"error": "No se pudo leer la imagen"}
+        preprocessed = self.preprocess(img)
+        M, quality = self.get_perspective_transform(preprocessed)
+        if M is None or quality < 0.1:
+            return {"error": "No se detectaron marcas de sincronización", "warp_quality": quality}
+        warped = cv2.warpPerspective(preprocessed, M, (self.target_w, self.target_h))
         
-        processed = self.preprocess(img)
-        M, quality = self.get_perspective_transform(processed)
+        results = {"answers": {}, "dni": "", "exam_type": "P", "warp_quality": quality, "name_rois": {}}
         
-        if M is None:
-            return {"error": "No se detectaron marcas de tiempo", "warp_quality": 0}
-            
-        # Corregir perspectiva
-        warped = cv2.warpPerspective(processed, M, (self.target_w, self.target_h))
-        
-        results = {
-            "answers": {},
-            "dni": "",
-            "exam_type": "",
-            "warp_quality": quality,
-            "ambiguous_count": 0
-        }
-        
-        # 1. Respuestas
-        for q_num, opts in self.layout["answer_bubbles"].items():
-            q_res = []
-            for letter, center in opts.items():
-                ratio, status = self.process_bubble(warped, center)
-                if status == "filled": q_res.append(letter)
-                elif status == "ambiguous": results["ambiguous_count"] += 1
-            
-            if len(q_res) == 0: results["answers"][q_num] = {"answer": None, "status": "blank"}
-            elif len(q_res) == 1: results["answers"][q_num] = {"answer": q_res[0], "status": "ok"}
-            else: results["answers"][q_num] = {"answer": "".join(q_res), "status": "double_mark"}
-
-        # 2. DNI
+        # DNI
         dni_str = ""
         for col in range(8):
             col_key = f"col_{col}"
-            best_digit = None
-            max_ratio = 0.55
+            best_digit, max_darkness = None, 0.45
             for digit, center in self.layout["dni_bubbles"][col_key].items():
-                ratio, status = self.process_bubble(warped, center)
-                if ratio > max_ratio:
-                    max_ratio = ratio
-                    best_digit = digit
+                darkness, status = self.process_bubble(warped, center)
+                if darkness > max_darkness: max_darkness, best_digit = darkness, digit
             dni_str += best_digit if best_digit else "?"
         results["dni"] = dni_str
 
-        # 3. Tipo de examen
+        # Tipo
+        best_type, max_type_dark = "P", 0.45
         for t, center in self.layout["exam_type_bubbles"].items():
-            ratio, status = self.process_bubble(warped, center)
-            if status == "filled":
-                results["exam_type"] = t
-                break
-                
+            darkness, _ = self.process_bubble(warped, center)
+            if darkness > max_type_dark: max_type_dark, best_type = darkness, t
+        results["exam_type"] = best_type
+
+        # Respuestas
+        for q_num, opts in self.layout["answer_bubbles"].items():
+            marked = []
+            for letter, center in opts.items():
+                darkness, status = self.process_bubble(warped, center)
+                if status == "filled": marked.append(letter)
+            if len(marked) == 0: results["answers"][q_num] = {"answer": None, "status": "blank"}
+            elif len(marked) == 1: results["answers"][q_num] = {"answer": marked[0], "status": "ok"}
+            else: results["answers"][q_num] = {"answer": "".join(marked), "status": "double_mark"}
+
+        # Extraer ROIs de nombres para el OCR
+        for field in ["NOMBRES", "APELLIDO PATERNO", "APELLIDO MATERNO"]:
+            roi = self.extract_field_roi(warped, field)
+            if roi is not None:
+                results["name_rois"][field] = roi
+        
         return results
+
